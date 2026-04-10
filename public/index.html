@@ -1109,7 +1109,25 @@
 
     <!-- Platform -->
     <div class="panel-section">
-      <div class="section-label">Platform</div>
+      <div class="section-label no-after">
+        <span>Platform</span>
+        <span style="flex:1;height:1px;background:var(--border)"></span>
+        <div class="info-tooltip">ⓘ
+          <div class="tooltip-box">Only applies in Bundle IDs mode.
+
+⚡ All — checks Android + iOS stores in
+  parallel; uses whichever finds a URL first.
+  Best for mixed lists.
+🤖 Android — Google Play lookup only.
+   iOS — iTunes Lookup API, with App Store
+  page scrape as fallback.
+📦 Amazon — Amazon product page scrape.
+
+Tip: if your list is one platform only,
+select it explicitly to skip unnecessary
+store lookups and speed up the crawl.</div>
+        </div>
+      </div>
       <div class="toggle-group">
         <button class="toggle-btn active" data-platform="both" onclick="setPlatform(this)">
           ⚡ All
@@ -1128,7 +1146,28 @@
 
     <!-- Bundle IDs / Direct URL -->
     <div class="panel-section">
-      <div class="section-label">Input</div>
+      <div class="section-label no-after">
+        <span>Input</span>
+        <span style="flex:1;height:1px;background:var(--border)"></span>
+        <div class="info-tooltip">ⓘ
+          <div class="tooltip-box">Bundle IDs — app store identifiers.
+  The tool finds the developer's website
+  then fetches app-ads.txt from there.
+  Android:  com.example.app
+  iOS:      324684580 or com.example.app
+  Amazon:   B00OGRMULA
+
+Web URLs — domain names or website URLs.
+  Fetches ads.txt from the root of each
+  domain automatically.
+  e.g.  example.com
+        www.publisher.com
+
+Direct URL — paste the exact ads.txt URL.
+  No store lookup performed. Fetched as-is.
+  e.g.  https://example.com/app-ads.txt</div>
+        </div>
+      </div>
       <div class="toggle-group" style="margin-bottom:12px">
         <button class="toggle-btn active" data-mode="bundle" onclick="setInputMode(this)">Bundle IDs</button>
         <button class="toggle-btn" data-mode="web" onclick="setInputMode(this)">Web URLs</button>
@@ -1185,22 +1224,35 @@
         <span style="flex:1;height:1px;background:var(--border)"></span>
         <div class="info-tooltip">ⓘ
           <div class="tooltip-box">Each keyword tag is independent.
-"Exact Match" shows when ANY keyword has hits.
+"Exact Match" fires when ANY Include keyword hits.
 Search is always case-insensitive.
 
-── Multi-token (space or +) ──
-ALL tokens must be on the SAME ads.txt line:
-  google.com direct  →  finds Google DIRECT entries
-  google.com+DIRECT  →  same thing
+── Token match (no comma, no newline) ──
+ALL tokens must appear on the SAME line:
+  pubmatic             →  any line with "pubmatic"
+  google.com direct    →  line with both tokens
+  google.com+DIRECT    →  same (+ = space)
 
-── Full line match ──
-Use commas to match a complete ads.txt entry:
-  google.com, pub-12345, DIRECT, f08c47fec0942fa0</div>
+── Full line match (comma-separated) ──
+Field-by-field comparison against ads.txt entries:
+  google.com, pub-12345, DIRECT, f08c47fec0942fa0
+  Exact = all fields match
+  Partial = domain matches + ≥1 other field
+
+── Block match (paste multiple lines) ──
+Copy several ads.txt lines and paste them in.
+Each line matched independently. Missing lines
+highlighted in red — these are your gaps.
+
+── Include vs Exclude ──
++ Include  the file MUST contain this keyword
+− Exclude  the file must NOT contain this keyword
+Mix both modes for gap analysis in one run.</div>
         </div>
       </div>
       <div class="keyword-input-row">
         <input type="text" id="kw-input" placeholder="e.g. pubmatic  ·  google.com+direct  ·  google.com, pub-123, DIRECT" />
-        <button class="btn-small" id="kw-mode-btn" onclick="toggleKwMode()" title="Switch between Include and Exclude mode">+ Include</button>
+        <button class="btn-small" id="kw-mode-btn" onclick="toggleKwMode()" title="+ Include — ads.txt MUST contain this keyword&#10;− Exclude — ads.txt must NOT contain this keyword&#10;&#10;Mix both modes for gap analysis in one run.&#10;After adding, click the +/− prefix on a tag to flip it.">+ Include</button>
         <button class="btn-small" onclick="addKeyword()">Add</button>
       </div>
       <div class="keyword-tags" id="kw-tags"></div>
@@ -1209,8 +1261,23 @@ Use commas to match a complete ads.txt entry:
     <!-- Run -->
     <div class="panel-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase">Batch Size</span>
-        <select id="batch-size-select" class="batch-select" title="Items per request — use smaller batches for large uploads to prevent lag">
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase">Batch Size</span>
+          <div class="info-tooltip">ⓘ
+            <div class="tooltip-box">Entries are sent in chunks to keep the
+browser responsive during large runs.
+
+  250 / batch  →  very large lists (5K+)
+  500 / batch  →  default, good for most
+1,000 / batch  →  moderate lists (~3K)
+2,500 / batch  →  smaller lists
+5,000 / batch  →  small lists only (<1K)
+
+Results appear as each batch completes —
+you can filter/export before all are done.</div>
+          </div>
+        </div>
+        <select id="batch-size-select" class="batch-select" title="Items processed per server request">
           <option value="250">250 / batch</option>
           <option value="500" selected>500 / batch</option>
           <option value="1000">1,000 / batch</option>
@@ -1231,37 +1298,37 @@ Use commas to match a complete ads.txt entry:
     <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
 
     <div id="stats-bar">
-      <div class="stat-item">
+      <div class="stat-item" title="At least one Include keyword found exactly in ads.txt, and all Exclude keywords are absent">
         <div class="stat-value green" id="stat-matched">0</div>
         <div class="stat-label">Exact Match</div>
       </div>
       <div class="stats-sep"></div>
-      <div class="stat-item">
+      <div class="stat-item" title="An Include keyword partially matched — domain found but other fields differ. All Exclude keywords absent.">
         <div class="stat-value" style="color:var(--orange)" id="stat-partial">0</div>
         <div class="stat-label">Partial Match</div>
       </div>
       <div class="stats-sep"></div>
-      <div class="stat-item">
+      <div class="stat-item" title="Ads.txt was fetched and all Exclude keywords are confirmed absent — these are your gap list entries">
         <div class="stat-value" style="color:var(--purple)" id="stat-absent">0</div>
         <div class="stat-label">Keyword Absent</div>
       </div>
       <div class="stats-sep"></div>
-      <div class="stat-item">
+      <div class="stat-item" title="Ads.txt was successfully fetched (includes exact and partial matches)">
         <div class="stat-value accent" id="stat-found">0</div>
         <div class="stat-label">URL Found</div>
       </div>
       <div class="stats-sep"></div>
-      <div class="stat-item">
+      <div class="stat-item" title="Developer URL was found but ads.txt returned a 404 or could not be fetched">
         <div class="stat-value red" id="stat-notfound">0</div>
         <div class="stat-label">Not Found (404)</div>
       </div>
       <div class="stats-sep"></div>
-      <div class="stat-item">
+      <div class="stat-item" title="No developer website could be found from the app store listing">
         <div class="stat-value" style="color:var(--text-mid)" id="stat-nourl">0</div>
         <div class="stat-label">No Dev URL</div>
       </div>
       <div class="stats-sep"></div>
-      <div class="stat-item">
+      <div class="stat-item" title="All entries processed in this run">
         <div class="stat-value" id="stat-total">0</div>
         <div class="stat-label">Total</div>
       </div>
@@ -1269,7 +1336,7 @@ Use commas to match a complete ads.txt entry:
         <button id="export-btn" onclick="toggleExportMenu(event)">↓ Export ▾</button>
         <div id="export-menu">
           <div class="em-props-only">
-            <label><input type="checkbox" id="export-props-only" style="cursor:pointer;margin-right:5px;">Properties only</label>
+            <label title="When checked, exports only the bundle ID / domain column — no keyword match data or URLs. Useful for generating a clean list to share with another team."><input type="checkbox" id="export-props-only" style="cursor:pointer;margin-right:5px;">Properties only</label>
           </div>
           <div class="em-section">CSV</div>
           <button class="em-item" onclick="doExport('matched','csv')">Exact Match</button>
@@ -1290,15 +1357,15 @@ Use commas to match a complete ads.txt entry:
     </div>
 
     <div id="filter-bar">
-      <button class="filter-btn" data-filter="matched" onclick="setFilter(this)">Has Exact Match</button>
-      <button class="filter-btn" data-filter="partial" onclick="setFilter(this)">Has Partial Match</button>
-      <button class="filter-btn" data-filter="absent" onclick="setFilter(this)">Keyword Absent</button>
-      <button class="filter-btn" data-filter="found" onclick="setFilter(this)">URL Found</button>
-      <button class="filter-btn" data-filter="notfound" onclick="setFilter(this)">Not Found (404)</button>
-      <button class="filter-btn" data-filter="nourl" onclick="setFilter(this)">No Dev URL</button>
+      <button class="filter-btn" data-filter="matched" onclick="setFilter(this)" title="Show only results where an Include keyword was found exactly in ads.txt, and all Exclude keywords are absent">Has Exact Match</button>
+      <button class="filter-btn" data-filter="partial" onclick="setFilter(this)" title="Show results where an Include keyword partially matched — domain found but other fields differ. All Exclude keywords absent.">Has Partial Match</button>
+      <button class="filter-btn" data-filter="absent" onclick="setFilter(this)" title="Show results where ads.txt was fetched and all Exclude keywords are confirmed absent — your gap list">Keyword Absent</button>
+      <button class="filter-btn" data-filter="found" onclick="setFilter(this)" title="Show results where ads.txt was fetched but no keyword criteria were met">URL Found</button>
+      <button class="filter-btn" data-filter="notfound" onclick="setFilter(this)" title="Show results where the developer URL was found but ads.txt returned a 404 or could not be fetched">Not Found (404)</button>
+      <button class="filter-btn" data-filter="nourl" onclick="setFilter(this)" title="Show results where no developer website could be found from the app store listing">No Dev URL</button>
       <button class="filter-btn active" data-filter="all" onclick="setFilter(this)">All</button>
       <input type="text" id="filter-search" placeholder="Filter by bundle ID..." oninput="applyFilter()" />
-      <select id="sort-select" onchange="sortResults()" title="Sort results">
+      <select id="sort-select" onchange="sortResults()" title="Sort order&#10;Input Order — same sequence as your list&#10;By Status — matches first, then partial, absent, URL found, errors&#10;A–Z — alphabetical by bundle ID or domain">
         <option value="input">↕ Input Order</option>
         <option value="status">↕ By Status</option>
         <option value="alpha">↕ A–Z</option>
@@ -1759,6 +1826,15 @@ function buildResultCard(result) {
     statusClass = 'notfound'; statusIcon = '✕'; badgeClass = 'notfound'; badgeText = 'NOT FOUND (404)';
   }
 
+  const badgeTitle = {
+    'EXACT MATCH':     'Include keyword found exactly in ads.txt · all Exclude keywords absent',
+    'PARTIAL MATCH':   'Include keyword partially matched (domain OK, other fields differ) · all Exclude keywords absent',
+    'KEYWORD ABSENT':  'Ads.txt fetched · all Exclude keywords confirmed not present — this is a gap list entry',
+    'URL FOUND':       'Ads.txt fetched successfully · no keyword criteria configured or met',
+    'NO DEV URL':      'No developer website found on the app store listing',
+    'NOT FOUND (404)': 'Developer URL found but ads.txt returned 404 or could not be fetched',
+  }[badgeText] || '';
+
   const appName = appMeta?.appName || appMeta?.developerName || '';
   const cardId = 'card-' + Math.random().toString(36).substr(2, 8);
 
@@ -1787,7 +1863,7 @@ function buildResultCard(result) {
         ${adsUrlHint ? `<div class="ads-url-hint">↳ ${escHtml(adsUrlHint)}</div>` : ''}
       </div>
       <div class="card-meta">
-        <div class="badge ${badgeClass}">${badgeText}</div>
+        <div class="badge ${badgeClass}" title="${badgeTitle}">${badgeText}</div>
         ${adsTxt?.found ? `<div class="match-count"><span>${totalMatches}</span> keyword hits · ${adsTxt.totalLines} lines</div>` : ''}
       </div>
       <div class="chevron" id="chev-${cardId}">▶</div>
