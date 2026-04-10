@@ -140,7 +140,7 @@
   /* ─── Layout ─── */
   .container {
     display: grid;
-    grid-template-columns: 380px 1fr;
+    grid-template-columns: auto 1fr;
     height: calc(100vh - 56px);
     overflow: hidden;
   }
@@ -152,7 +152,39 @@
     flex-direction: column;
     height: 100%;
     overflow-y: auto;
+    width: 380px;
+    min-width: 380px;
+    flex-shrink: 0;
   }
+
+  .panel-left.collapsed { width: 40px; min-width: 40px; overflow: hidden; }
+  .panel-left.collapsed .panel-section { display: none; }
+  .panel-collapse-strip {
+    padding: 6px 8px;
+    display: flex;
+    justify-content: flex-end;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .panel-left.collapsed .panel-collapse-strip { justify-content: center; padding: 6px 0; }
+  .panel-collapse-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 22px; height: 22px;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .panel-collapse-btn:hover { border-color: var(--accent); color: var(--accent); }
 
   .panel-section {
     padding: 14px 20px;
@@ -786,6 +818,8 @@
     opacity: 0.9;
   }
   .kw-line.partial-line mark { background: var(--orange-dim); color: var(--orange); }
+  .field-unmatched { color: var(--text-dim); opacity: 0.5; }
+  .field-sep { color: var(--border2); }
 
   .partial-section-label {
     font-family: var(--mono);
@@ -965,6 +999,15 @@
 
   .em-section:first-child { border-top: none; }
 
+  .em-props-only {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+  .em-props-only label { cursor: pointer; display: flex; align-items: center; }
+
   .em-item {
     display: block;
     width: 100%;
@@ -1014,6 +1057,13 @@
   .kw-mode-prefix.include { color: var(--accent); }
   .kw-mode-prefix.exclude { color: var(--red); }
 
+  .sample-dl-btn {
+    background: none; border: none;
+    color: var(--text-dim); font-family: var(--mono); font-size: 10px;
+    cursor: pointer; padding: 0; text-decoration: underline; transition: color 0.15s;
+  }
+  .sample-dl-btn:hover { color: var(--accent); }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -1038,6 +1088,10 @@
 <div class="container">
   <!-- ─── LEFT PANEL ─── -->
   <div class="panel-left">
+
+    <div class="panel-collapse-strip">
+      <button class="panel-collapse-btn" id="panel-collapse-btn" onclick="togglePanel()" title="Collapse sidebar">◀</button>
+    </div>
 
     <!-- Platform -->
     <div class="panel-section">
@@ -1077,6 +1131,7 @@
             <input type="file" id="csv-input" accept=".csv,.txt,.xlsx,.xls,.pdf" />
           </div>
           <div class="bundle-count" id="bundle-count"></div>
+          <div style="text-align:right;margin-top:4px"><button class="sample-dl-btn" onclick="downloadSample('bundle')">↓ download sample</button></div>
         </div>
       </div>
 
@@ -1090,6 +1145,7 @@
             <input type="file" id="web-csv-input" accept=".csv,.txt,.xlsx,.xls,.pdf" />
           </div>
           <div class="bundle-count" id="web-bundle-count"></div>
+          <div style="text-align:right;margin-top:4px"><button class="sample-dl-btn" onclick="downloadSample('web')">↓ download sample</button></div>
         </div>
       </div>
 
@@ -1103,6 +1159,7 @@
             <input type="file" id="direct-csv-input" accept=".csv,.txt,.xlsx,.xls,.pdf" />
           </div>
           <div class="bundle-count" id="direct-bundle-count"></div>
+          <div style="text-align:right;margin-top:4px"><button class="sample-dl-btn" onclick="downloadSample('direct')">↓ download sample</button></div>
         </div>
       </div>
     </div>
@@ -1187,6 +1244,9 @@ Use commas to match a complete ads.txt entry:
       <div id="export-wrapper">
         <button id="export-btn" onclick="toggleExportMenu(event)">↓ Export ▾</button>
         <div id="export-menu">
+          <div class="em-props-only">
+            <label><input type="checkbox" id="export-props-only" style="cursor:pointer;margin-right:5px;">Properties only</label>
+          </div>
           <div class="em-section">CSV</div>
           <button class="em-item" onclick="doExport('matched','csv')">Exact Match</button>
           <button class="em-item" onclick="doExport('partial','csv')">Partial Match</button>
@@ -1380,6 +1440,25 @@ function renderKeywords() {
 function removeKeyword(idx) {
   keywords.splice(idx, 1);
   renderKeywords();
+}
+
+function downloadSample(mode) {
+  const samples = {
+    bundle: {
+      content: 'Bundle ID\ncom.example.android.app\n123456789\ncom.example.ios.app\nB00OGRMULA',
+      filename: 'sample-bundle-ids.csv',
+    },
+    web: {
+      content: 'Domain\nhttps://example.com\nwww.publisher.com\nanother-site.net',
+      filename: 'sample-web-urls.csv',
+    },
+    direct: {
+      content: 'URL\nhttps://example.com/app-ads.txt\nhttps://publisher.com/ads.txt',
+      filename: 'sample-direct-urls.csv',
+    },
+  };
+  const s = samples[mode];
+  if (s) triggerDownload(new Blob([s.content], {type:'text/csv'}), s.filename);
 }
 
 // ─── File Upload (bundle / web / direct) ─────────────────────────────────────
@@ -1749,7 +1828,7 @@ function buildCardBody(result, totalMatches) {
         kwHtml += `<div class="partial-section-label">Partial matches — similar but not identical</div>`;
         kwHtml += `<div class="kw-lines">`;
         partialLines.slice(0, 10).forEach(line => {
-          kwHtml += `<div class="kw-line partial-line">${highlightKeyword(line, kw)}</div>`;
+          kwHtml += `<div class="kw-line partial-line">${renderPartialLine(line, kw)}</div>`;
         });
         if (partialLines.length > 10) kwHtml += `<div class="kw-line partial-line" style="color:var(--text-dim);font-style:italic">... and ${partialLines.length - 10} more</div>`;
         kwHtml += `</div>`;
@@ -1845,6 +1924,11 @@ function sortResults() {
 // ─── Export ───────────────────────────────────────────────────────────────────
 function buildExportRows(filter) {
   const results = filterResults(filter);
+  if (document.getElementById('export-props-only')?.checked) {
+    const header = ['Bundle ID / URL'];
+    const data = results.map(r => [r.bundleId]);
+    return { header, data, results };
+  }
   const header = ['Bundle ID','App Name','Developer','Platform','Developer URL',
                   'app-ads.txt URL','ads.txt Found','Total Lines',
                   ...keywords.map(k => `${k.mode === 'exclude' ? 'Absent' : 'Matches'}: ${k.text}`)];
@@ -1935,6 +2019,21 @@ function highlightKeyword(line, kw) {
   return escaped;
 }
 
+function renderPartialLine(line, kw) {
+  // Block keywords: fall back to token highlight (multiple sub-kwlines, can't map)
+  if (kw.includes('\n')) return highlightKeyword(line, kw);
+  // Token mode: use existing highlight
+  if (!kw.includes(',')) return highlightKeyword(line, kw);
+  // Comma-separated: field-by-field comparison
+  const kwFields = kw.split(',').map(f => f.trim().toLowerCase());
+  const lineFields = line.split(',').map(f => f.trim());
+  return lineFields.map((field, i) => {
+    const matched = kwFields[i] !== undefined && field.toLowerCase() === kwFields[i];
+    if (matched) return `<mark>${escHtml(field)}</mark>`;
+    return `<span class="field-unmatched">${escHtml(field)}</span>`;
+  }).join('<span class="field-sep">, </span>');
+}
+
 function highlightPartial(line, kw) {
   // Split by space, +, / to get all sub-tokens for partial highlighting
   const tokens = kw.trim().split(/[\s+/]+/).filter(t => t.length >= 3);
@@ -1945,6 +2044,14 @@ function highlightPartial(line, kw) {
     escaped = escaped.replace(regex, m => `<mark>${m}</mark>`);
   }
   return escaped;
+}
+
+function togglePanel() {
+  const panel = document.querySelector('.panel-left');
+  const btn = document.getElementById('panel-collapse-btn');
+  const collapsed = panel.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '▶' : '◀';
+  btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
 }
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
