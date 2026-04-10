@@ -530,6 +530,19 @@
   }
   #sort-select:focus { border-color: var(--accent); }
 
+  .batch-select {
+    padding: 4px 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-mid);
+    font-family: var(--mono);
+    font-size: 11px;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  .batch-select:focus { border-color: var(--accent); }
+
   /* Results area */
   #results-area {
     flex: 1;
@@ -1194,6 +1207,19 @@ Use commas to match a complete ads.txt entry:
 
     <!-- Run -->
     <div class="panel-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase">Batch Size</span>
+        <select id="batch-size-select" class="batch-select" title="Items per request — use smaller batches for large uploads to prevent lag">
+          <option value="250">250 / batch</option>
+          <option value="500" selected>500 / batch</option>
+          <option value="1000">1,000 / batch</option>
+          <option value="2500">2,500 / batch</option>
+          <option value="5000">5,000 / batch</option>
+          <option value="10000">10,000 / batch</option>
+          <option value="25000">25,000 / batch</option>
+          <option value="all">All at once</option>
+        </select>
+      </div>
       <button id="run-btn" onclick="startCrawl()">
         <span id="run-icon">▶</span>
         <span id="run-label">RUN CRAWLER</span>
@@ -1301,6 +1327,10 @@ let allResults = [];
 let currentFilter = 'all';
 let isRunning = false;
 let abortController = null;
+let chunkQueue = [];
+let chunkIndex = 0;
+let grandTotal = 0;
+let grandCompleted = 0;
 
 // ─── Keyword helpers ──────────────────────────────────────────────────────────
 function hasResultMatch(result) {
@@ -1528,74 +1558,115 @@ function stopCrawl() {
   if (abortController) abortController.abort();
 }
 
+function getBatchSize() {
+  const val = document.getElementById('batch-size-select').value;
+  return val === 'all' ? Infinity : parseInt(val);
+}
+
 async function startCrawl() {
   if (isRunning) { stopCrawl(); return; }
 
-  const bundleIds = inputMode === 'bundle' ? getBundleIds() : [];
-  const directUrls = inputMode === 'direct' ? getDirectUrls() : [];
-  const webUrls    = inputMode === 'web'    ? getWebUrls()    : [];
-  const allIds = bundleIds.length ? bundleIds : directUrls.length ? directUrls : webUrls;
+  const allBundleIds = inputMode === 'bundle' ? getBundleIds() : [];
+  const allDirectUrls = inputMode === 'direct' ? getDirectUrls() : [];
+  const allWebUrls    = inputMode === 'web'    ? getWebUrls()    : [];
+  const activeIds = allBundleIds.length ? allBundleIds : allDirectUrls.length ? allDirectUrls : allWebUrls;
 
-  if (allIds.length === 0) {
+  if (activeIds.length === 0) {
     const msgs = { bundle: 'Please enter at least one bundle ID', direct: 'Please enter at least one URL', web: 'Please enter at least one domain' };
     alert(msgs[inputMode] || 'Please enter at least one input');
     return;
   }
   if (keywords.length === 0) { alert('Please add at least one keyword'); return; }
 
-  isRunning = true;
+  const batchSize = getBatchSize();
+
+  // Build chunk queue
+  chunkQueue = [];
+  for (let i = 0; i < activeIds.length; i += batchSize) {
+    const slice = activeIds.slice(i, i + batchSize);
+    chunkQueue.push({
+      bundleIds: inputMode === 'bundle' ? slice : [],
+      directUrls: inputMode === 'direct' ? slice : [],
+      webUrls: inputMode === 'web' ? slice : [],
+    });
+  }
+  chunkIndex = 0;
+  grandTotal = activeIds.length;
+  grandCompleted = 0;
   allResults = [];
   currentFilter = 'all';
-  abortController = new AbortController();
 
-  setStatus('running', `0 / ${allIds.length}`);
+  // Reset UI
+  document.getElementById('progress-bar-wrap').style.display = 'block';
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('stats-bar').style.display = 'flex';
+  document.getElementById('stat-total').textContent    = grandTotal;
+  document.getElementById('stat-matched').textContent  = '0';
+  document.getElementById('stat-partial').textContent  = '0';
+  document.getElementById('stat-absent').textContent   = '0';
+  document.getElementById('stat-found').textContent    = '0';
+  document.getElementById('stat-notfound').textContent = '0';
+  document.getElementById('stat-nourl').textContent    = '0';
+  document.getElementById('export-wrapper').style.display = 'none';
+  document.getElementById('filter-bar').style.display = 'flex';
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+  document.getElementById('empty-state') && (document.getElementById('empty-state').style.display = 'none');
+  document.getElementById('results-area').innerHTML = '';
+
+  await runNextChunk();
+}
+
+async function runNextChunk() {
+  if (chunkIndex >= chunkQueue.length) {
+    finishCrawl(false);
+    return;
+  }
+
+  isRunning = true;
+  abortController = new AbortController();
+  const chunk = chunkQueue[chunkIndex];
+  const chunkNum = chunkIndex + 1;
+  const totalChunks = chunkQueue.length;
+  const chunkIds = [...chunk.bundleIds, ...chunk.directUrls, ...chunk.webUrls];
+
+  const statusLabel = () => totalChunks > 1
+    ? `Batch ${chunkNum}/${totalChunks} · ${grandCompleted}/${grandTotal}`
+    : `${grandCompleted} / ${grandTotal}`;
+
+  setStatus('running', statusLabel());
   document.getElementById('run-btn').classList.add('stop-mode');
   document.getElementById('run-icon').textContent = '■';
   document.getElementById('run-label').textContent = 'STOP';
 
-  // Show progress
-  document.getElementById('progress-bar-wrap').style.display = 'block';
-  document.getElementById('progress-bar').style.width = '0%';
-
-  // Show stats bar
-  const statsBar = document.getElementById('stats-bar');
-  statsBar.style.display = 'flex';
-  document.getElementById('stat-total').textContent    = allIds.length;
-  document.getElementById('stat-matched').textContent  = '0';
-  document.getElementById('stat-found').textContent    = '0';
-  document.getElementById('stat-notfound').textContent = '0';
-  document.getElementById('export-wrapper').style.display = 'none';
-
-  // Show filter bar
-  document.getElementById('filter-bar').style.display = 'flex';
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
-
-  // Clear results
-  document.getElementById('empty-state') && (document.getElementById('empty-state').style.display = 'none');
-  document.getElementById('results-area').innerHTML = '';
-
-  // Show loading placeholders
-  allIds.forEach(id => {
-    const div = document.createElement('div');
-    div.className = 'loading-card';
-    div.id = `loading-${CSS.escape(id)}`;
-    div.innerHTML = `<div class="spinner"></div><div class="loading-text">${escHtml(id)}</div>`;
-    document.getElementById('results-area').appendChild(div);
-  });
-
-  // Stream results
-  const res = await fetch('/api/crawl/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bundleIds, directUrls, webUrls, keywords: keywords.map(k => k.text), platform: selectedPlatform }),
-    signal: abortController.signal,
-  });
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
+  // Loading placeholders only for small chunks (avoids DOM freeze on large batches)
+  if (chunkIds.length <= 100) {
+    chunkIds.forEach(id => {
+      const div = document.createElement('div');
+      div.className = 'loading-card';
+      div.id = `loading-${CSS.escape(id)}`;
+      div.innerHTML = `<div class="spinner"></div><div class="loading-text">${escHtml(id)}</div>`;
+      document.getElementById('results-area').appendChild(div);
+    });
+  }
 
   try {
+    const res = await fetch('/api/crawl/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bundleIds: chunk.bundleIds,
+        directUrls: chunk.directUrls,
+        webUrls: chunk.webUrls,
+        keywords: keywords.map(k => k.text),
+        platform: selectedPlatform,
+      }),
+      signal: abortController.signal,
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1606,52 +1677,44 @@ async function startCrawl() {
         if (!line.startsWith('data: ')) continue;
         try {
           const event = JSON.parse(line.slice(6));
-          handleEvent(event);
+          if (event.type === 'result') {
+            const { result } = event;
+            grandCompleted++;
+            allResults.push(result);
+            updateStats();
+            document.getElementById('progress-bar').style.width = (grandCompleted / grandTotal * 100) + '%';
+            setStatus('running', statusLabel());
+            const loadingEl = document.getElementById(`loading-${CSS.escape(result.bundleId)}`);
+            const card = buildResultCard(result);
+            if (loadingEl) loadingEl.replaceWith(card);
+            else document.getElementById('results-area').appendChild(card);
+            applyFilter();
+          }
         } catch {}
       }
     }
   } catch (err) {
-    if (err.name !== 'AbortError') throw err;
-    // Stopped by user — remove any remaining loading placeholders
-    document.querySelectorAll('.loading-card').forEach(el => el.remove());
+    if (err.name === 'AbortError') {
+      document.querySelectorAll('.loading-card').forEach(el => el.remove());
+      finishCrawl(true);
+      return;
+    }
+    finishCrawl(false);
+    return;
   }
 
-  // Done or stopped
-  const wasStopped = abortController.signal.aborted;
+  chunkIndex++;
+  isRunning = false;
+  await runNextChunk();
+}
+
+function finishCrawl(wasStopped) {
   isRunning = false;
   setStatus('done', wasStopped ? 'STOPPED' : 'COMPLETE');
   document.getElementById('run-btn').classList.remove('stop-mode');
   document.getElementById('run-icon').textContent = '▶';
   document.getElementById('run-label').textContent = 'RUN AGAIN';
   if (allResults.length > 0) document.getElementById('export-wrapper').style.display = 'block';
-}
-
-function handleEvent(event) {
-  if (event.type === 'result') {
-    const { result, completed, total } = event;
-
-    // Update progress
-    const pct = (completed / total) * 100;
-    document.getElementById('progress-bar').style.width = pct + '%';
-    setStatus('running', `${completed} / ${total}`);
-
-    // Store result
-    allResults.push(result);
-
-    // Update stats
-    updateStats();
-
-    // Replace loading card
-    const loadingEl = document.getElementById(`loading-${CSS.escape(result.bundleId)}`);
-    const card = buildResultCard(result);
-    if (loadingEl) {
-      loadingEl.replaceWith(card);
-    } else {
-      document.getElementById('results-area').appendChild(card);
-    }
-
-    applyFilter();
-  }
 }
 
 // ─── Result Card Builder ──────────────────────────────────────────────────────
