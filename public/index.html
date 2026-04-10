@@ -1333,15 +1333,34 @@ let grandTotal = 0;
 let grandCompleted = 0;
 
 // ─── Keyword helpers ──────────────────────────────────────────────────────────
+function excKwsAllAbsent(result) {
+  // Returns true when every exclude-mode keyword has zero hits (exact + partial)
+  return keywords
+    .filter(k => k.mode === 'exclude')
+    .every(k =>
+      (result.adsTxt?.matches?.[k.text] || []).length === 0 &&
+      (result.adsTxt?.partialMatches?.[k.text] || []).length === 0
+    );
+}
+
 function hasResultMatch(result) {
+  if (!result.adsTxt?.found) return false;
   const incKws = keywords.filter(k => k.mode === 'include').map(k => k.text);
-  return incKws.some(kw => (result.adsTxt?.matches?.[kw] || []).length > 0);
+  if (incKws.length === 0) return false;
+  // Include: at least one include keyword has exact hits
+  const incHit = incKws.some(kw => (result.adsTxt?.matches?.[kw] || []).length > 0);
+  if (!incHit) return false;
+  // Exclude: ALL exclude keywords must be absent
+  return excKwsAllAbsent(result);
 }
 
 function hasPartialMatch(result) {
+  if (!result.adsTxt?.found) return false;
+  if (hasResultMatch(result)) return false;
   const incKws = keywords.filter(k => k.mode === 'include').map(k => k.text);
-  return !hasResultMatch(result) &&
-    incKws.some(kw => (result.adsTxt?.partialMatches?.[kw] || []).length > 0);
+  const incPartial = incKws.some(kw => (result.adsTxt?.partialMatches?.[kw] || []).length > 0);
+  // Partial match only counts when exclude keywords are also clean
+  return incPartial && excKwsAllAbsent(result);
 }
 
 function hasKeywordAbsent(result) {
@@ -1865,47 +1884,75 @@ function buildCardBody(result, totalMatches) {
     const kwMissingLines = adsTxt.missingLines || {};
     const allKws = new Set([...Object.keys(matches), ...Object.keys(partialMatches), ...Object.keys(kwMissingLines)]);
     for (const kw of allKws) {
-      const exactLines   = matches[kw] || [];
-      const partialLines = partialMatches[kw] || [];
+      const exactLines    = matches[kw] || [];
+      const partialLines  = partialMatches[kw] || [];
       const missingKwLines = kwMissingLines[kw] || [];
-      // Label: show truncated version for multi-line blocks
+      // Resolve include/exclude mode for this keyword
+      const kwTag = keywords.find(k => k.text === kw);
+      const isExclude = kwTag?.mode === 'exclude';
+      const excViolated = isExclude && (exactLines.length > 0 || partialLines.length > 0);
+      const excClean    = isExclude && exactLines.length === 0 && partialLines.length === 0;
+
       const kwLabel = kw.includes('\n')
         ? escHtml(kw.split('\n')[0].trim().slice(0, 50)) + ` <span class="kw-block-count">+${kw.split('\n').filter(l=>l.trim()).length - 1} lines</span>`
         : escHtml(kw);
+
+      const modePrefix = `<span class="kw-mode-prefix ${isExclude ? 'exclude' : 'include'}" style="font-size:11px;margin-right:4px">${isExclude ? '−' : '+'}</span>`;
+      const statusTag = excViolated
+        ? `<span style="font-family:var(--mono);font-size:10px;color:var(--red);margin-left:auto">✗ PRESENT — exclude violated</span>`
+        : excClean
+          ? `<span style="font-family:var(--mono);font-size:10px;color:var(--green);margin-left:auto">✓ ABSENT</span>`
+          : '';
+
       kwHtml += `<div class="kw-block">
         <div class="kw-header">
-          <span class="kw-name">${kwLabel}</span>
-          <span class="kw-hits">${exactLines.length} exact</span>
-          ${partialLines.length > 0 ? `<span class="kw-hits partial">  ${partialLines.length} partial</span>` : ''}
-          ${missingKwLines.length > 0 ? `<span class="kw-hits" style="color:var(--red)">  ${missingKwLines.length} missing</span>` : ''}
+          ${modePrefix}<span class="kw-name">${kwLabel}</span>
+          ${!isExclude ? `<span class="kw-hits">${exactLines.length} exact</span>` : ''}
+          ${!isExclude && partialLines.length > 0 ? `<span class="kw-hits partial">  ${partialLines.length} partial</span>` : ''}
+          ${!isExclude && missingKwLines.length > 0 ? `<span class="kw-hits" style="color:var(--red)">  ${missingKwLines.length} missing</span>` : ''}
+          ${statusTag}
         </div>`;
-      if (exactLines.length > 0) {
-        kwHtml += `<div class="kw-lines">`;
-        exactLines.slice(0, 20).forEach(line => {
-          kwHtml += `<div class="kw-line">${highlightKeyword(line, kw)}</div>`;
-        });
-        if (exactLines.length > 20) kwHtml += `<div class="kw-line" style="color:var(--text-dim);font-style:italic">... and ${exactLines.length - 20} more</div>`;
-        kwHtml += `</div>`;
-      }
-      if (partialLines.length > 0) {
-        kwHtml += `<div class="partial-section-label">Partial matches — similar but not identical</div>`;
-        kwHtml += `<div class="kw-lines">`;
-        partialLines.slice(0, 10).forEach(line => {
-          kwHtml += `<div class="kw-line partial-line">${renderPartialLine(line, kw)}</div>`;
-        });
-        if (partialLines.length > 10) kwHtml += `<div class="kw-line partial-line" style="color:var(--text-dim);font-style:italic">... and ${partialLines.length - 10} more</div>`;
-        kwHtml += `</div>`;
-      }
-      if (missingKwLines.length > 0) {
-        kwHtml += `<div class="missing-section-label">Missing — not found in ads.txt</div>`;
-        kwHtml += `<div class="kw-lines">`;
-        missingKwLines.forEach(line => {
-          kwHtml += `<div class="kw-line missing-line">${escHtml(line)}</div>`;
-        });
-        kwHtml += `</div>`;
-      }
-      if (exactLines.length === 0 && partialLines.length === 0 && missingKwLines.length === 0) {
-        kwHtml += `<div class="no-matches">No matches found</div>`;
+
+      if (isExclude) {
+        // Exclude keyword: show matched lines as violations (red)
+        if (excViolated) {
+          kwHtml += `<div class="kw-lines">`;
+          exactLines.slice(0, 10).forEach(line => {
+            kwHtml += `<div class="kw-line" style="border-left:2px solid var(--red);color:var(--red);opacity:0.85">${escHtml(line)}</div>`;
+          });
+          if (exactLines.length > 10) kwHtml += `<div class="kw-line" style="color:var(--text-dim);font-style:italic">... and ${exactLines.length - 10} more</div>`;
+          kwHtml += `</div>`;
+        }
+      } else {
+        // Include keyword: normal match display
+        if (exactLines.length > 0) {
+          kwHtml += `<div class="kw-lines">`;
+          exactLines.slice(0, 20).forEach(line => {
+            kwHtml += `<div class="kw-line">${highlightKeyword(line, kw)}</div>`;
+          });
+          if (exactLines.length > 20) kwHtml += `<div class="kw-line" style="color:var(--text-dim);font-style:italic">... and ${exactLines.length - 20} more</div>`;
+          kwHtml += `</div>`;
+        }
+        if (partialLines.length > 0) {
+          kwHtml += `<div class="partial-section-label">Partial matches — similar but not identical</div>`;
+          kwHtml += `<div class="kw-lines">`;
+          partialLines.slice(0, 10).forEach(line => {
+            kwHtml += `<div class="kw-line partial-line">${renderPartialLine(line, kw)}</div>`;
+          });
+          if (partialLines.length > 10) kwHtml += `<div class="kw-line partial-line" style="color:var(--text-dim);font-style:italic">... and ${partialLines.length - 10} more</div>`;
+          kwHtml += `</div>`;
+        }
+        if (missingKwLines.length > 0) {
+          kwHtml += `<div class="missing-section-label">Missing — not found in ads.txt</div>`;
+          kwHtml += `<div class="kw-lines">`;
+          missingKwLines.forEach(line => {
+            kwHtml += `<div class="kw-line missing-line">${escHtml(line)}</div>`;
+          });
+          kwHtml += `</div>`;
+        }
+        if (exactLines.length === 0 && partialLines.length === 0 && missingKwLines.length === 0) {
+          kwHtml += `<div class="no-matches">No matches found</div>`;
+        }
       }
       kwHtml += `</div>`;
     }
