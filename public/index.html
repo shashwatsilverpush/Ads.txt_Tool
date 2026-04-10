@@ -1215,9 +1215,6 @@ Use commas to match a complete ads.txt entry:
           <option value="1000">1,000 / batch</option>
           <option value="2500">2,500 / batch</option>
           <option value="5000">5,000 / batch</option>
-          <option value="10000">10,000 / batch</option>
-          <option value="25000">25,000 / batch</option>
-          <option value="all">All at once</option>
         </select>
       </div>
       <button id="run-btn" onclick="startCrawl()">
@@ -1379,7 +1376,7 @@ function filterResults(filter) {
     if (filter === 'matched')  return r.adsTxt?.found && hasResultMatch(r);
     if (filter === 'partial')  return r.adsTxt?.found && hasPartialMatch(r);
     if (filter === 'absent')   return hasKeywordAbsent(r);
-    if (filter === 'found')    return r.adsTxt?.found;
+    if (filter === 'found')    return r.adsTxt?.found && !hasResultMatch(r) && !hasPartialMatch(r);
     if (filter === 'notfound') return r.developerUrl && !r.adsTxt?.found;
     if (filter === 'nourl')    return !r.developerUrl;
     return true;
@@ -1990,7 +1987,7 @@ function applyFilter() {
     if (currentFilter === 'matched')       show = status === 'found' && hasMatches;
     else if (currentFilter === 'partial')  show = status === 'partial';
     else if (currentFilter === 'absent')   show = status === 'absent';
-    else if (currentFilter === 'found')    show = status === 'found';
+    else if (currentFilter === 'found')    show = status === 'found' && !hasMatches;
     else if (currentFilter === 'notfound') show = status === 'notfound';
     else if (currentFilter === 'nourl')    show = status === 'nourl';
 
