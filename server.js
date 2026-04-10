@@ -264,6 +264,26 @@ function isAmazonASIN(id) {
   return /^B[A-Z0-9]{9}$/.test(id);
 }
 
+// Returns true when an entry in the bundle ID list looks like a web domain
+// rather than an app bundle ID (e.g. "example.com", "www.publisher.com").
+// Bundle IDs always start with a TLD segment and have 3+ parts: com.company.app
+// Web domains have the TLD at the end: example.com, sub.example.com, example.co.uk
+function looksLikeWebDomain(input) {
+  if (/^https?:\/\//i.test(input)) return true;
+  if (/^www\./i.test(input)) return true;
+  const parts = input.split('.');
+  if (parts.length < 2) return false;
+  const bundleStartPrefixes = new Set([
+    'com','org','net','io','de','jp','fr','uk','us','au','ca','br','in','co',
+    'app','tv','me','mobi','info','biz','eu','ru','cn','it','es','nl','pl',
+    'se','no','dk','fi','ch','at','be','kr','sg','hk','mx','ar','cl','za',
+    'nz','id','ph','vn','th'
+  ]);
+  // If first segment is a known bundle-ID TLD prefix AND there are 3+ parts → bundle ID
+  if (bundleStartPrefixes.has(parts[0].toLowerCase()) && parts.length >= 3) return false;
+  return true;
+}
+
 async function getDeveloperUrlAmazon(asin) {
   const storeUrl = `https://www.amazon.com/dp/${asin}`;
   try {
@@ -314,6 +334,13 @@ async function getDeveloperUrlAmazon(asin) {
 }
 
 async function crawlBundle(bundleId, keywords, platform) {
+  // If the entry looks like a website domain (not a bundle ID), fetch ads.txt directly
+  if (looksLikeWebDomain(bundleId)) {
+    const adsTxt = await fetchAdsTxt(bundleId, keywords);
+    const domain = normalizeDomain(bundleId) || bundleId;
+    return { bundleId, isWeb: true, developerUrl: domain, adsTxt, appMeta: {}, android: null, ios: null, amazon: null };
+  }
+
   const result = { bundleId, keywords, android: null, ios: null, amazon: null, adsTxt: null };
   let developerUrl = null;
   let appMeta = {};
